@@ -1,6 +1,7 @@
 package com.outlook.dev.controller;
 
 import java.io.IOException;
+import java.util.Date;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
@@ -10,18 +11,16 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
-import com.outlook.dev.auth.AuthHelper;
 import com.outlook.dev.auth.TokenResponse;
-import com.outlook.dev.service.Message;
+import com.outlook.dev.service.Contact;
 import com.outlook.dev.service.OutlookService;
 import com.outlook.dev.service.OutlookServiceBuilder;
 import com.outlook.dev.service.PagedResult;
 
 @Controller
-public class MailController {
-
-	@RequestMapping("/mail")
-	public String mail(Model model, HttpServletRequest request, RedirectAttributes redirectAttributes) {
+public class ContactsController {
+	@RequestMapping("/contacts")
+	public String contacts(Model model, HttpServletRequest request, RedirectAttributes redirectAttributes) {
 		HttpSession session = request.getSession();
 		TokenResponse tokens = (TokenResponse)session.getAttribute("tokens");
 		if (tokens == null) {
@@ -30,33 +29,36 @@ public class MailController {
 			return "redirect:/index.html";
 		}
 		
-		String tenantId = (String)session.getAttribute("userTenantId");
-		
-		tokens = AuthHelper.ensureTokens(tokens, tenantId);
+		Date now = new Date();
+		if (now.after(tokens.getExpirationTime())) {
+			// Token expired
+			// TODO: Use the refresh token to request a new token from the token endpoint
+			// For now, just complain
+			redirectAttributes.addFlashAttribute("error", "The access token has expired. Please logout and re-login.");
+			return "redirect:/index.html";
+		}
 		
 		String email = (String)session.getAttribute("userEmail");
 		
 		OutlookService outlookService = OutlookServiceBuilder.getOutlookService(tokens.getAccessToken(), email);
 		
-		// Retrieve messages from the inbox
-		String folder = "inbox";
-		// Sort by time received in descending order
-		String sort = "receivedDateTime DESC";
+		// Sort by given name in ascending order (A-Z)
+		String sort = "givenName ASC";
 		// Only return the properties we care about
-		String properties = "receivedDateTime,from,isRead,subject,bodyPreview";
-		// Return at most 10 messages
+		String properties = "givenName,surname,companyName,emailAddresses";
+		// Return at most 10 contacts
 		Integer maxResults = 10;
 		
 		try {
-			PagedResult<Message> messages = outlookService.getMessages(
-					folder, sort, properties, maxResults)
+			PagedResult<Contact> contacts = outlookService.getContacts(
+					sort, properties, maxResults)
 					.execute().body();
-			model.addAttribute("messages", messages.getValue());
+			model.addAttribute("contacts", contacts.getValue());
 		} catch (IOException e) {
 			redirectAttributes.addFlashAttribute("error", e.getMessage());
 			return "redirect:/index.html";
 		}
 		
-		return "mail";
+		return "contacts";
 	}
 }
